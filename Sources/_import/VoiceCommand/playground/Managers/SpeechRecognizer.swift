@@ -8,17 +8,19 @@ import AVFoundation
 import Combine
 import SwiftUI
 import os.log
+import Observation
 
 @MainActor
-final class SpeechRecognizer: ObservableObject {
+@Observable
+final class SpeechRecognizer {
     // MARK: - Published Properties
-    @Published var isListening: Bool = false
-    @Published var indicatorColor: Color = .red
-    @Published var furtherCommandsText: String = ""
-    @Published var isTriggerDetected: Bool = false
-    @Published var errorMessage: String? = nil
-    @Published var command: String? = nil
-    @Published var countdownRemaining: Int = 0
+    var isListening: Bool = false
+    var indicatorColor: Color = .red
+    var furtherCommandsText: String = ""
+    var isTriggerDetected: Bool = false
+    var errorMessage: String? = nil
+    var command: String? = nil
+    var countdownRemaining: Int = 0
 
     // MARK: - Private Properties
     private var audioEngine = AVAudioEngine()
@@ -247,7 +249,6 @@ final class SpeechRecognizer: ObservableObject {
     }
 
     private func handleFinalNewRecipe(spokenText: String) {
-        let prefix = "new recipe"
         furtherCommandsText = spokenText
         command = "new recipe"
         stopListeningForCommands()

@@ -5,7 +5,7 @@
 import SwiftUI
 
 struct SpeechRecognizerOverlay: View {
-    @ObservedObject var speechRecognizer: SpeechRecognizer
+    var speechRecognizer: SpeechRecognizer
 
     var body: some View {
         VStack {
