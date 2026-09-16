@@ -1,406 +1,194 @@
-// SpeechRecognizer.swift
+//
+//  SpeechRecognizer.swift
+//  playground
+//
+//  Two-tier voice command listener: wait for the trigger word, then open a
+//  6 s command window and hand a parsed `SpeechCommand` to the UI.
+//  Lifecycle is owner-driven: call `start()` on a user gesture and `stop()`
+//  when the hosting view disappears. Everything runs on the main actor; the
+//  Speech and audio callbacks hop back here with plain values only.
+//
 
 #if os(iOS)
 
 import Foundation
 import Speech
 import AVFoundation
-import Combine
-import SwiftUI
-import os.log
 import Observation
+import os
 
 @MainActor
 @Observable
 final class SpeechRecognizer {
-    // MARK: - Published Properties
-    var isListening: Bool = false
-    var indicatorColor: Color = .red
-    var furtherCommandsText: String = ""
-    var isTriggerDetected: Bool = false
-    var errorMessage: String? = nil
-    var command: String? = nil
-    var countdownRemaining: Int = 0
+    enum Phase: Equatable { case idle, waitingForTrigger, listeningForCommands }
 
-    // MARK: - Private Properties
-    private var audioEngine = AVAudioEngine()
-    private var speechRecognizerInstance: SFSpeechRecognizer?
+    private(set) var phase: Phase = .idle
+    private(set) var transcript = ""
+    private(set) var countdownRemaining = 0
+    var errorMessage: String?
+    /// Set once per recognized command. The consumer clears it after acting.
+    var command: SpeechCommand?
+
+    var isListening: Bool { phase != .idle }
+    var interpreter = CommandInterpreter()
+
+    private let commandWindowSeconds = 6
+    private let engine = AVAudioEngine()
+    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private var request: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
+    private var task: SFSpeechRecognitionTask?
+    private var countdown: Task<Void, Never>?
+    private let logger = Logger(subsystem: "com.braisenly.playground", category: "SpeechRecognizer")
 
-    private var countdownTimer: DispatchSourceTimer?
-    private let countdownDuration: TimeInterval = 6.0 // 6 seconds
+    // MARK: - Public
 
-    private let triggerWord = "genie"
-    var allowedCommands = ["add ingredient", "remove ingredient"]
-
-    private var newRecipeDetected = false
-    private var lastNonEmptyRecognized: String? = nil
-
-    // A dedicated queue for all speech recognition logic
-    private let recognitionQueue = DispatchQueue(label: "com.braisenly.playground.speechRecognitionQueue", qos: .userInitiated)
-
-    private let logger = Logger(subsystem: "com.braisenly.playground.SpeechRecognizer", category: "SpeechRecognizer")
-    // MARK: - Initializer
-    init() {
-        let isPreview = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
-        if isPreview {
-            // For previews, no speech recognition
-            isListening = false
-            indicatorColor = .red
-            isTriggerDetected = false
-            furtherCommandsText = ""
-            countdownRemaining = 0
-            logger.log("Initialized in Preview mode.")
-            return
-        }
-
-        setupSpeechRecognizer()
-        logger.log("SpeechRecognizer initialized.")
+    func setAvailableRecipes(_ recipes: [DBRecipe]) {
+        interpreter.recipeNames = recipes.map { $0.name.lowercased() }
     }
 
-    deinit {
-        Task { [weak self] in
-            await self?.stopListening()
-        }
-        logger.log("SpeechRecognizer deinitialized.")
-    }
-
-    // MARK: - Setup Methods
-    private func setupSpeechRecognizer() {
-        speechRecognizerInstance = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-        requestSpeechAuthorization()
-    }
-
-    private func requestSpeechAuthorization() {
-        SFSpeechRecognizer.requestAuthorization { [weak self] authStatus in
-            guard let self = self else { return }
-            switch authStatus {
-            case .authorized:
-                self.logger.log("Speech recognition authorized.")
-                Task {
-                    await self.startListeningForTrigger()
-                }
-            case .denied:
-                self.errorMessage = "Speech recognition authorization denied."
-                self.logger.error("Speech recognition authorization denied.")
-            case .restricted:
-                self.errorMessage = "Speech recognition restricted on this device."
-                self.logger.error("Speech recognition restricted on this device.")
-            case .notDetermined:
-                self.errorMessage = "Speech recognition not yet authorized."
-                self.logger.error("Speech recognition not yet authorized.")
-            @unknown default:
-                self.errorMessage = "Unknown speech recognition authorization status."
-                self.logger.error("Unknown speech recognition authorization status.")
-            }
-        }
-    }
-
-    // MARK: - Listening Methods
-    private func startListeningForTrigger() async {
-        resetStateForNewSession()
-
-        guard let recognizer = speechRecognizerInstance, recognizer.isAvailable else {
-            setError("Speech recognizer not available.")
-            logger.error("Speech recognizer not available.")
-            return
-        }
-
-        setupAudioSession()
-
-        request = SFSpeechAudioBufferRecognitionRequest()
-        guard let recognitionRequest = request else {
-            setError("Unable to create recognition request for Tier-1.")
-            logger.error("Unable to create recognition request for Tier-1.")
-            return
-        }
-
-        recognitionRequest.shouldReportPartialResults = true
-        recognitionRequest.contextualStrings = [triggerWord] + allowedCommands
-
-        cancelCurrentTask()
-
-        recognitionTask = recognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
-            Task { @MainActor in
-                guard let self = self else { return }
-
-                if let error = error {
-                    if self.isNoSpeechError(error) {
-                        // No speech - normal, keep waiting
-                        return
-                    } else {
-                        self.handleRecognitionError(tier: "Tier-1", error: error)
-                        await self.resetForNewSession()
-                        return
-                    }
-                }
-
-                if let result = result {
-                    let spokenText = result.bestTranscription.formattedString
-                        .lowercased()
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-
-                    self.logger.log("Tier-1 recognized: \(spokenText)")
-
-                    if spokenText.contains(self.triggerWord) && !self.isTriggerDetected {
-                        self.isTriggerDetected = true
-                        self.updateIndicator(to: .green)
-                        await self.stopListening()
-                        Task {
-                            await self.startListeningForCommands()
-                        }
-                    }
-                }
-            }
-        }
-
-        configureMicrophoneInput()
-        startAudioEngine()
-        logger.log("Tier-1 started - Listening for trigger word.")
-    }
-
-    private func startListeningForCommands() async {
-        furtherCommandsText = ""
-        newRecipeDetected = false
-        lastNonEmptyRecognized = nil
-        startCountdown()
-
-        guard let recognizer = speechRecognizerInstance, recognizer.isAvailable else {
-            setError("Speech recognizer not available for Tier-2.")
-            logger.error("Speech recognizer not available for Tier-2.")
-            return
-        }
-
-        setupAudioSession()
-
-        request = SFSpeechAudioBufferRecognitionRequest()
-        guard let recognitionRequest = request else {
-            setError("Unable to create recognition request for Tier-2.")
-            logger.error("Unable to create recognition request for Tier-2.")
-            return
-        }
-
-        recognitionRequest.shouldReportPartialResults = true
-        recognitionRequest.contextualStrings = allowedCommands
-
-        cancelCurrentTask()
-
-        recognitionTask = recognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
-            Task { @MainActor in
-                guard let self = self else { return }
-
-                if let error = error {
-                    if self.isNoSpeechError(error) {
-                        self.logger.debug("No speech in Tier-2; waiting for commands.")
-                        return
-                    } else {
-                        self.handleRecognitionError(tier: "Tier-2", error: error)
-                        self.stopListeningForCommands()
-                        return
-                    }
-                }
-
-                if let result = result {
-                    let spokenText = result.bestTranscription.formattedString
-                        .lowercased()
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-
-                    self.logger.log("Tier-2 recognized: \(spokenText)")
-
-                    if spokenText.contains("new recipe") {
-                        self.newRecipeDetected = true
-                    }
-
-                    if let matchedCommand = self.allowedCommands.first(where: { spokenText.contains($0) }) {
-                        if matchedCommand == "new recipe" {
-                            self.logger.log("Detected 'new recipe', waiting for name...")
-                            self.lastNonEmptyRecognized = spokenText
-                        } else {
-                            // Normal command recognized immediately
-                            self.furtherCommandsText = matchedCommand
-                            self.command = matchedCommand
-                            self.stopListeningForCommands()
-                        }
-                    } else {
-                        // No direct match yet
-                        if !spokenText.isEmpty {
-                            self.lastNonEmptyRecognized = spokenText
-                        }
-
-                        if result.isFinal {
-                            if self.newRecipeDetected {
-                                self.handleFinalNewRecipe(spokenText: spokenText)
-                            } else {
-                                self.logger.log("Final result, no recognized commands.")
-                                self.stopListeningForCommands()
-                            }
-                        } else {
-                            self.logger.debug("Partial result, waiting for more speech...")
-                        }
-                    }
-                }
-            }
-        }
-
-        configureMicrophoneInput()
-        startAudioEngine()
-        logger.log("Tier-2 started - Listening for further commands.")
-    }
-
-    private func handleFinalNewRecipe(spokenText: String) {
-        furtherCommandsText = spokenText
-        command = "new recipe"
-        stopListeningForCommands()
-    }
-
-    // MARK: - Audio Setup and Control
-    private func setupAudioSession() {
-        let audioSession = AVAudioSession.sharedInstance()
-        do {
-            try audioSession.setCategory(.record, mode: .measurement, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
-            try audioSession.setPreferredSampleRate(22050)
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            logger.log("Audio session set up successfully.")
-        } catch {
-            setError("Audio session setup error: \(error.localizedDescription)")
-            logger.error("Audio session setup error: \(error)")
-        }
-    }
-
-    private func configureMicrophoneInput() {
-        let inputNode = audioEngine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-            self?.request?.append(buffer)
-        }
-        logger.log("Microphone input configured.")
-    }
-
-    private func startAudioEngine() {
-        do {
-            audioEngine.prepare()
-            try audioEngine.start()
-            isListening = true
-            logger.log("Audio engine started.")
-        } catch {
-            setError("Audio engine start error: \(error.localizedDescription)")
-            logger.error("Audio engine start error: \(error)")
-        }
-    }
-
-    private func stopListening() async {
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
-        recognitionTask?.cancel()
-        recognitionTask = nil
-        request = nil
-        isListening = false
-        logger.log("Stopped listening.")
-    }
-
-    // MARK: - Countdown and Timeout
-    private func startCountdown() {
-        countdownTimer?.cancel()
-        countdownRemaining = Int(countdownDuration)
-
-        let timerQueue = DispatchQueue(label: "com.youbraisenly.playgroundrapp.speechQueue.timer")
-        countdownTimer = DispatchSource.makeTimerSource(queue: timerQueue)
-        countdownTimer?.schedule(deadline: .now(), repeating: 1.0)
-        countdownTimer?.setEventHandler { [weak self] in
-            guard let self = self else { return }
-            if self.countdownRemaining > 0 {
-                self.countdownRemaining -= 1
-                self.logger.debug("Countdown: \(self.countdownRemaining)")
-            } else {
-                self.handleTimeout()
-            }
-        }
-        countdownTimer?.resume()
-        logger.log("Countdown started (6s) in Tier-2.")
-    }
-
-    private func handleTimeout() {
-        logger.log("Countdown reached - Finalizing commands.")
-        if newRecipeDetected {
-            if let backupText = lastNonEmptyRecognized {
-                handleFinalNewRecipe(spokenText: backupText)
-            } else {
-                furtherCommandsText = "new recipe"
-                command = "new recipe"
-                stopListeningForCommands()
-            }
-        } else {
-            logger.log("No commands detected by timeout.")
-            stopListeningForCommands()
-        }
-    }
-
-    // MARK: - Reset Methods
-    private func resetStateForNewSession() {
-        newRecipeDetected = false
-        lastNonEmptyRecognized = nil
-        furtherCommandsText = ""
-        command = nil
+    func start() async {
+        guard phase == .idle else { return }
         errorMessage = nil
-        isTriggerDetected = false
-        logger.log("State reset for new session.")
-    }
-
-    private func resetForNewSession() async {
-        await stopListening()
-        resetStateForNewSession()
-        Task {
-            await startListeningForTrigger()
+        let status = await withCheckedContinuation { c in
+            SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0) }
         }
-        logger.log("Reset for new session.")
-    }
-
-    // MARK: - Error Handling
-    private func handleRecognitionError(tier: String, error: Error) {
-        errorMessage = "Recognition error in \(tier): \(error.localizedDescription)"
-        logger.error("Critical error in \(tier): \(error.localizedDescription)")
-    }
-
-    private func isNoSpeechError(_ error: Error) -> Bool {
-        let nsError = error as NSError
-        logger.debug("Error Domain: \(nsError.domain), Code: \(nsError.code), Desc: \(nsError.localizedDescription)")
-
-        // No speech conditions: code 1 or kAFAssistantErrorDomain code 1101/1110
-        if nsError.domain == "SFSpeechRecognizerErrorDomain" && nsError.code == 1 {
-            return true
-        } else if nsError.domain == "kAFAssistantErrorDomain" && (nsError.code == 1101 || nsError.code == 1110) {
-            return true
+        switch status {
+        case .authorized: listen(.waitingForTrigger)
+        case .denied: fail("Speech recognition denied in Settings.")
+        case .restricted: fail("Speech recognition restricted on this device.")
+        case .notDetermined: fail("Speech recognition not authorized.")
+        @unknown default: fail("Unknown speech authorization status.")
         }
-        return false
     }
 
-    private func updateIndicator(to color: Color) {
-        indicatorColor = color
-        logger.debug("Indicator color updated to \(color).")
+    func stop() {
+        tearDown()
+        phase = .idle
+        transcript = ""
     }
 
-    private func setError(_ message: String) {
-        errorMessage = message
-        logger.error("Error set: \(message)")
+    // MARK: - Listening
+
+    private func listen(_ next: Phase) {
+        tearDown()
+        guard let recognizer, recognizer.isAvailable else {
+            fail("Speech recognizer not available."); return
+        }
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+
+            let request = SFSpeechAudioBufferRecognitionRequest()
+            request.shouldReportPartialResults = true
+            request.contextualStrings = interpreter.contextualStrings
+            self.request = request
+
+            let input = engine.inputNode
+            input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { buffer, _ in
+                request.append(buffer)
+            }
+            engine.prepare()
+            try engine.start()
+
+            task = recognizer.recognitionTask(with: request) { [weak self] result, error in
+                let text = result?.bestTranscription.formattedString
+                let isFinal = result?.isFinal ?? false
+                let nsError = error.map { $0 as NSError }
+                Task { @MainActor [weak self] in
+                    self?.handle(text: text, isFinal: isFinal, error: nsError)
+                }
+            }
+        } catch {
+            fail("Audio setup failed: \(error.localizedDescription)"); return
+        }
+
+        phase = next
+        transcript = ""
+        if next == .listeningForCommands { startCountdown() }
+        logger.log("Listening: \(String(describing: next))")
     }
 
-    // MARK: - Task Management
+    private func handle(text: String?, isFinal: Bool, error: NSError?) {
+        guard phase != .idle else { return }
+        if let error {
+            if Self.isNoSpeech(error) { return }
+            logger.error("Recognition error: \(error.localizedDescription)")
+            errorMessage = error.localizedDescription
+            listen(.waitingForTrigger)
+            return
+        }
+        guard let text else { return }
+        transcript = text
 
-    private func cancelCurrentTask() {
-        recognitionTask?.cancel()
-        recognitionTask = nil
+        switch phase {
+        case .waitingForTrigger:
+            if interpreter.containsTrigger(text) { listen(.listeningForCommands) }
+        case .listeningForCommands:
+            guard let cmd = interpreter.command(in: text) else {
+                if isFinal { listen(.waitingForTrigger) }
+                return
+            }
+            // "new recipe <name>" keeps collecting the name until the utterance ends.
+            if case .newRecipe = cmd, !isFinal { return }
+            deliver(cmd)
+        case .idle:
+            break
+        }
+    }
+
+    private func deliver(_ cmd: SpeechCommand) {
+        logger.log("Command: \(String(describing: cmd))")
+        command = cmd
+        listen(.waitingForTrigger)
+    }
+
+    // MARK: - Command window
+
+    private func startCountdown() {
+        countdown?.cancel()
+        countdown = Task { [weak self] in
+            guard let self else { return }
+            for remaining in stride(from: commandWindowSeconds, through: 1, by: -1) {
+                countdownRemaining = remaining
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+            }
+            countdownRemaining = 0
+            if let cmd = interpreter.command(in: transcript) {
+                deliver(cmd)
+            } else {
+                logger.log("Command window expired.")
+                listen(.waitingForTrigger)
+            }
+        }
+    }
+
+    // MARK: - Teardown
+
+    private func tearDown() {
+        countdown?.cancel()
+        countdown = nil
+        countdownRemaining = 0
+        task?.cancel()
+        task = nil
+        request?.endAudio()
         request = nil
-        logger.debug("Canceled current recognition task.")
+        if engine.isRunning { engine.stop() }
+        engine.inputNode.removeTap(onBus: 0)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    private func stopListeningForCommands() {
-        countdownTimer?.cancel()
-        Task { [weak self] in
-            await self?.stopListening()
-        }
-        logger.log("Stopped listening for commands.")
+    private func fail(_ message: String) {
+        logger.error("\(message)")
+        errorMessage = message
+        stop()
+    }
+
+    /// "No speech detected" is routine silence, not a failure.
+    private static func isNoSpeech(_ e: NSError) -> Bool {
+        (e.domain == "SFSpeechRecognizerErrorDomain" && e.code == 1)
+            || (e.domain == "kAFAssistantErrorDomain" && (e.code == 1101 || e.code == 1110))
     }
 }
 

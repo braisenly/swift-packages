@@ -5,57 +5,51 @@
 import SwiftUI
 
 struct SpeechRecognizerOverlay: View {
-    var speechRecognizer: SpeechRecognizer
+    var speech: SpeechRecognizer
 
     var body: some View {
-        VStack {
-            if speechRecognizer.isListening {
-                HStack {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(1.5)
-                        .transition(.scale)
-                    
-                    Text("Listening...")
-                        .foregroundColor(.white)
-                        .padding(.leading, 8)
-                        .transition(.opacity)
+        VStack(alignment: .trailing, spacing: 8) {
+            if speech.isListening {
+                HStack(spacing: 8) {
+                    Image(systemName: "waveform")
+                        .symbolEffect(.variableColor.iterative, isActive: true)
+                    Text(statusText)
+                    if speech.phase == .listeningForCommands {
+                        Text("\(speech.countdownRemaining)")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.black.opacity(0.7))
-                        .shadow(radius: 5)
-                        .animation(.easeInOut, value: speechRecognizer.isListening)
-                )
-                .padding()
+                .font(.footnote)
+                .padding(8)
+                .glassIfAvailable(cornerRadius: 10)
                 .transition(.move(edge: .top).combined(with: .opacity))
-                .animation(.easeInOut, value: speechRecognizer.isListening)
             }
-            
-            if let error = speechRecognizer.errorMessage {
-                Text(error)
-                    .foregroundColor(.red)
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.black.opacity(0.7))
-                            .shadow(radius: 5)
-                    )
-                    .padding()
-                    .transition(.slide)
-                    .animation(.easeInOut, value: speechRecognizer.errorMessage)
+            if let error = speech.errorMessage {
+                HStack {
+                    Text(error).font(.footnote).foregroundStyle(.red)
+                    Button("Dismiss") { speech.errorMessage = nil }.font(.footnote)
+                }
+                .padding(8)
+                .glassIfAvailable(cornerRadius: 10)
+                .transition(.opacity)
             }
         }
-        .animation(.default, value: speechRecognizer.isListening)
+        .animation(.easeInOut, value: speech.phase)
+        .animation(.easeInOut, value: speech.errorMessage)
+    }
+
+    private var statusText: String {
+        switch speech.phase {
+        case .idle: ""
+        case .waitingForTrigger: "Say “genie”"
+        case .listeningForCommands: speech.transcript.isEmpty ? "Listening…" : speech.transcript
+        }
     }
 }
 
-struct SpeechRecognizerOverlay_Previews: PreviewProvider {
-    static var previews: some View {
-        SpeechRecognizerOverlay(speechRecognizer: SpeechRecognizer())
-            .previewLayout(.sizeThatFits)
-    }
+#Preview {
+    SpeechRecognizerOverlay(speech: SpeechRecognizer())
 }
 
 #endif
