@@ -107,6 +107,7 @@ final class SpeechRecognizer {
         transcript = ""
         if next == .listeningForCommands { startCountdown() }
         logger.log("Listening: \(String(describing: next))")
+        dprint("[Speech] Listening: \(next)")
     }
 
     private func handle(text: String?, isFinal: Bool, error: NSError?) {
@@ -114,12 +115,14 @@ final class SpeechRecognizer {
         if let error {
             if Self.isNoSpeech(error) { return }
             logger.error("Recognition error: \(error.localizedDescription)")
+            dprint("[Speech] Recognition error: \(error.domain) \(error.code) \(error.localizedDescription)")
             errorMessage = error.localizedDescription
             listen(.waitingForTrigger)
             return
         }
         guard let text else { return }
         transcript = text
+        dprint("[Speech] \(phase) heard: \(text) final=\(isFinal)")
 
         switch phase {
         case .waitingForTrigger:
@@ -139,6 +142,7 @@ final class SpeechRecognizer {
 
     private func deliver(_ cmd: SpeechCommand) {
         logger.log("Command: \(String(describing: cmd))")
+        dprint("[Speech] Command: \(cmd)")
         command = cmd
         listen(.waitingForTrigger)
     }
@@ -181,6 +185,7 @@ final class SpeechRecognizer {
 
     private func fail(_ message: String) {
         logger.error("\(message)")
+        dprint("[Speech] Error: \(message)")
         errorMessage = message
         stop()
     }
