@@ -19,6 +19,9 @@ nonisolated enum SpeechCommand: Equatable, Sendable {
 
 nonisolated struct CommandInterpreter: Sendable {
     var triggerWord = "genie"
+    /// What the recognizer actually returns for "genie" in practice. Observed on
+    /// device: "jean", "jeannie", "ginny"; without these the trigger rarely fires.
+    static let triggerAliases = ["genie", "jeanie", "jeannie", "jean", "ginny", "jeni", "jenny"]
     /// Lowercased recipe names the user can `open`.
     var recipeNames: [String] = []
 
@@ -35,13 +38,29 @@ nonisolated struct CommandInterpreter: Sendable {
     }
 
     func containsTrigger(_ text: String) -> Bool {
-        text.lowercased().contains(triggerWord)
+        let t = text.lowercased()
+        return Self.triggerAliases.contains(where: t.contains)
+    }
+
+    /// Index just past the last trigger occurrence, so a long transcript is parsed
+    /// from the most recent trigger rather than the first.
+    private func afterLastTrigger(_ text: String) -> String {
+        var best: String.Index?
+        for alias in Self.triggerAliases {
+            var search = text.startIndex..<text.endIndex
+            while let r = text.range(of: alias, range: search) {
+                if best == nil || r.upperBound > best! { best = r.upperBound }
+                guard r.upperBound < text.endIndex else { break }
+                search = r.upperBound..<text.endIndex
+            }
+        }
+        guard let best else { return text }
+        return String(text[best...])
     }
 
     /// First command found in `text`. Text after the trigger word (if present) is what gets parsed.
     func command(in text: String) -> SpeechCommand? {
-        var t = text.lowercased()
-        if let r = t.range(of: triggerWord) { t = String(t[r.upperBound...]) }
+        var t = afterLastTrigger(text.lowercased())
         t = t.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return nil }
 

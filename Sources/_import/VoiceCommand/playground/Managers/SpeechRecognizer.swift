@@ -33,6 +33,9 @@ final class SpeechRecognizer {
     var interpreter = CommandInterpreter()
 
     private let commandWindowSeconds = 6
+    /// Restart the trigger session once its transcript passes this, so a long
+    /// conversation near the device cannot drown the wake word.
+    private static let maxIdleTranscript = 120
     private let engine = AVAudioEngine()
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -149,7 +152,14 @@ final class SpeechRecognizer {
 
         switch phase {
         case .waitingForTrigger:
-            if interpreter.containsTrigger(text) { listen(.listeningForCommands) }
+            if interpreter.containsTrigger(text) {
+                listen(.listeningForCommands)
+            } else if isFinal || text.count > Self.maxIdleTranscript {
+                // Speech keeps one utterance open indefinitely. Left alone, the
+                // trigger phase accumulates every word spoken near the device and
+                // the recogniser's accuracy collapses; restart with a clean buffer.
+                listen(.waitingForTrigger)
+            }
         case .listeningForCommands:
             guard let cmd = interpreter.command(in: text) else {
                 if isFinal { listen(.waitingForTrigger) }
