@@ -46,12 +46,45 @@ final class SpeechRecognizer {
         interpreter.recipeNames = recipes.map { $0.name.lowercased() }
     }
 
+    /// Speech, AVFoundation and TCC all call back on their own queues. Under
+    /// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` a closure written inline here
+    /// would be inferred `@MainActor` and trap in `swift_task_checkIsolated` the
+    /// moment the framework invoked it, so each one lives in a `nonisolated`
+    /// function and hops to the main actor itself.
+    nonisolated private static func authorizationStatus() async -> SFSpeechRecognizerAuthorizationStatus {
+        await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
+        }
+    }
+
+    nonisolated private func installTap(
+        on engine: AVAudioEngine,
+        feeding request: SFSpeechAudioBufferRecognitionRequest
+    ) {
+        let input = engine.inputNode
+        input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { buffer, _ in
+            request.append(buffer)
+        }
+    }
+
+    nonisolated private func startRecognitionTask(
+        _ recognizer: SFSpeechRecognizer,
+        _ request: SFSpeechAudioBufferRecognitionRequest
+    ) -> SFSpeechRecognitionTask {
+        recognizer.recognitionTask(with: request) { [weak self] result, error in
+            let text = result?.bestTranscription.formattedString
+            let isFinal = result?.isFinal ?? false
+            let nsError = error.map { $0 as NSError }
+            Task { @MainActor in
+                self?.handle(text: text, isFinal: isFinal, error: nsError)
+            }
+        }
+    }
+
     func start() async {
         guard phase == .idle else { return }
         errorMessage = nil
-        let status = await withCheckedContinuation { c in
-            SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0) }
-        }
+        let status = await Self.authorizationStatus()
         switch status {
         case .authorized: listen(.waitingForTrigger)
         case .denied: fail("Speech recognition denied in Settings.")
@@ -84,21 +117,11 @@ final class SpeechRecognizer {
             request.contextualStrings = interpreter.contextualStrings
             self.request = request
 
-            let input = engine.inputNode
-            input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { buffer, _ in
-                request.append(buffer)
-            }
+            installTap(on: engine, feeding: request)
             engine.prepare()
             try engine.start()
 
-            task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-                let text = result?.bestTranscription.formattedString
-                let isFinal = result?.isFinal ?? false
-                let nsError = error.map { $0 as NSError }
-                Task { @MainActor [weak self] in
-                    self?.handle(text: text, isFinal: isFinal, error: nsError)
-                }
-            }
+            task = startRecognitionTask(recognizer, request)
         } catch {
             fail("Audio setup failed: \(error.localizedDescription)"); return
         }
