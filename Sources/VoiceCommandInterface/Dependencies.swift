@@ -5,21 +5,14 @@
 
 import Foundation
 
-struct VoiceCommandDependencies {
-    var transcriber: any SpeechTranscribing
-    var authorizer: any SpeechAuthorizing
-    var clock: any Clock<Duration>
-}
+public struct VoiceCommandDependencies {
+    public var transcriber: any SpeechTranscribing
+    public var authorizer: any SpeechAuthorizing
+    public var clock: any Clock<Duration>
 
-#if os(iOS)
-extension VoiceCommandDependencies {
-    /// Microphone + on-device Speech recognition.
-    static func live(locale: Locale = Locale(identifier: "en-US")) -> Self {
-        Self(
-            transcriber: LiveSpeechTranscriber(locale: locale),
-            authorizer: LiveSpeechAuthorizer(),
-            clock: ContinuousClock()
-        )
+    public init(transcriber: any SpeechTranscribing, authorizer: any SpeechAuthorizing, clock: any Clock<Duration>) {
+        self.transcriber = transcriber
+        self.authorizer = authorizer
+        self.clock = clock
     }
 }
-#endif

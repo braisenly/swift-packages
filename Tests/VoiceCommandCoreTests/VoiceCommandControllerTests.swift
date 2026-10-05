@@ -1,6 +1,6 @@
 //
 //  VoiceCommandControllerTests.swift
-//  playgroundTests
+//  VoiceCommandCoreTests
 //
 //  The voice command state machine, driven through the ports with a scripted
 //  transcriber. These pin the phase transitions the Gate 0 baseline could not
@@ -9,7 +9,8 @@
 
 import Testing
 import Foundation
-@testable import playground
+import VoiceCommand
+import VoiceCommandTesting
 
 @MainActor
 struct VoiceCommandStateMachine {

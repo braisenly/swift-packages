@@ -9,7 +9,7 @@
 
 import Foundation
 
-nonisolated enum SpeechCommand: Equatable, Sendable {
+public nonisolated enum SpeechCommand: Equatable, Sendable {
     case open(recipe: String)
     /// `name` is whatever followed the phrase; may be empty.
     case newRecipe(name: String)
@@ -17,27 +17,32 @@ nonisolated enum SpeechCommand: Equatable, Sendable {
     case removeIngredient
 }
 
-nonisolated struct CommandInterpreter: Sendable {
-    var triggerWord = "genie"
+public nonisolated struct CommandInterpreter: Sendable {
+    public var triggerWord = "genie"
     /// What the recognizer actually returns for "genie" in practice. Observed on
     /// device: "jean", "jeannie", "ginny"; without these the trigger rarely fires.
-    static let triggerAliases = ["genie", "jeanie", "jeannie", "jean", "ginny", "jeni", "jenny"]
+    public static let triggerAliases = ["genie", "jeanie", "jeannie", "jean", "ginny", "jeni", "jenny"]
     /// Lowercased recipe names the user can `open`.
-    var recipeNames: [String] = []
+    public var recipeNames: [String] = []
 
-    static let openVerbs = ["open", "show", "view"]
-    static let newRecipePhrases = ["new recipe", "create recipe", "add recipe"]
-    static let addIngredientPhrases = ["add ingredient"]
-    static let removeIngredientPhrases = ["remove ingredient"]
+    public init(triggerWord: String = "genie", recipeNames: [String] = []) {
+        self.triggerWord = triggerWord
+        self.recipeNames = recipeNames
+    }
+
+    public static let openVerbs = ["open", "show", "view"]
+    public static let newRecipePhrases = ["new recipe", "create recipe", "add recipe"]
+    public static let addIngredientPhrases = ["add ingredient"]
+    public static let removeIngredientPhrases = ["remove ingredient"]
 
     /// Everything the recognizer should bias toward (`SFSpeechRecognitionRequest.contextualStrings`).
-    var contextualStrings: [String] {
+    public var contextualStrings: [String] {
         [triggerWord]
             + Self.newRecipePhrases + Self.addIngredientPhrases + Self.removeIngredientPhrases
             + recipeNames.flatMap { name in Self.openVerbs.map { "\($0) \(name)" } }
     }
 
-    func containsTrigger(_ text: String) -> Bool {
+    public func containsTrigger(_ text: String) -> Bool {
         let t = text.lowercased()
         return Self.triggerAliases.contains(where: t.contains)
     }
@@ -59,7 +64,7 @@ nonisolated struct CommandInterpreter: Sendable {
     }
 
     /// First command found in `text`. Text after the trigger word (if present) is what gets parsed.
-    func command(in text: String) -> SpeechCommand? {
+    public func command(in text: String) -> SpeechCommand? {
         var t = afterLastTrigger(text.lowercased())
         t = t.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return nil }

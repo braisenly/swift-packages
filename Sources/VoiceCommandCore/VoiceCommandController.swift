@@ -12,21 +12,22 @@
 import Foundation
 import Observation
 import os
+import VoiceCommandInterface
 
 @MainActor
 @Observable
-final class VoiceCommandController {
-    enum Phase: Equatable { case idle, waitingForTrigger, listeningForCommands }
+public final class VoiceCommandController {
+    public enum Phase: Equatable { case idle, waitingForTrigger, listeningForCommands }
 
-    private(set) var phase: Phase = .idle
-    private(set) var transcript = ""
-    private(set) var countdownRemaining = 0
-    var errorMessage: String?
+    public private(set) var phase: Phase = .idle
+    public private(set) var transcript = ""
+    public private(set) var countdownRemaining = 0
+    public var errorMessage: String?
     /// Set once per recognized command. The consumer clears it after acting.
-    var command: SpeechCommand?
+    public var command: SpeechCommand?
 
-    var isListening: Bool { phase != .idle }
-    var interpreter = CommandInterpreter()
+    public var isListening: Bool { phase != .idle }
+    public var interpreter = CommandInterpreter()
 
     private let configuration: VoiceCommandConfiguration
     private let transcriber: any SpeechTranscribing
@@ -35,7 +36,7 @@ final class VoiceCommandController {
     private var countdown: Task<Void, Never>?
     private let logger: Logger
 
-    init(configuration: VoiceCommandConfiguration, dependencies: VoiceCommandDependencies) {
+    public init(configuration: VoiceCommandConfiguration, dependencies: VoiceCommandDependencies) {
         self.configuration = configuration
         transcriber = dependencies.transcriber
         authorizer = dependencies.authorizer
@@ -46,11 +47,11 @@ final class VoiceCommandController {
     // MARK: - Public
 
     /// Recipe names the user can `open`; matched case-insensitively.
-    func setVocabulary(recipeNames: [String]) {
+    public func setVocabulary(recipeNames: [String]) {
         interpreter.recipeNames = recipeNames.map { $0.lowercased() }
     }
 
-    func start() async {
+    public func start() async {
         guard phase == .idle else { return }
         errorMessage = nil
         switch await authorizer.requestAuthorization() {
@@ -62,7 +63,7 @@ final class VoiceCommandController {
         }
     }
 
-    func stop() {
+    public func stop() {
         tearDown()
         phase = .idle
         transcript = ""

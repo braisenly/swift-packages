@@ -10,20 +10,21 @@
 import Foundation
 import Speech
 import AVFoundation
+import VoiceCommandInterface
 
-final class LiveSpeechTranscriber: SpeechTranscribing {
+public final class LiveSpeechTranscriber: SpeechTranscribing {
     private let engine = AVAudioEngine()
     private let recognizer: SFSpeechRecognizer?
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
 
-    init(locale: Locale) {
+    public init(locale: Locale) {
         recognizer = SFSpeechRecognizer(locale: locale)
     }
 
-    var isAvailable: Bool { recognizer?.isAvailable ?? false }
+    public var isAvailable: Bool { recognizer?.isAvailable ?? false }
 
-    func start(contextualStrings: [String], onEvent: @escaping @MainActor @Sendable (TranscriptEvent) -> Void) throws {
+    public func start(contextualStrings: [String], onEvent: @escaping @MainActor @Sendable (TranscriptEvent) -> Void) throws {
         guard let recognizer else { return }
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.record, mode: .measurement, options: .duckOthers)
@@ -41,7 +42,7 @@ final class LiveSpeechTranscriber: SpeechTranscribing {
         task = Self.startRecognitionTask(recognizer, request, onEvent: onEvent)
     }
 
-    func stop() {
+    public func stop() {
         task?.cancel()
         task = nil
         request?.endAudio()
@@ -92,8 +93,10 @@ final class LiveSpeechTranscriber: SpeechTranscribing {
     }
 }
 
-nonisolated struct LiveSpeechAuthorizer: SpeechAuthorizing {
-    func requestAuthorization() async -> VoiceAuthorization {
+public nonisolated struct LiveSpeechAuthorizer: SpeechAuthorizing {
+    public init() {}
+
+    public func requestAuthorization() async -> VoiceAuthorization {
         let status = await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
         }
@@ -107,4 +110,14 @@ nonisolated struct LiveSpeechAuthorizer: SpeechAuthorizing {
     }
 }
 
+extension VoiceCommandDependencies {
+    /// Microphone + on-device Speech recognition.
+    public static func live(locale: Locale = Locale(identifier: "en-US")) -> Self {
+        Self(
+            transcriber: LiveSpeechTranscriber(locale: locale),
+            authorizer: LiveSpeechAuthorizer(),
+            clock: ContinuousClock()
+        )
+    }
+}
 #endif

@@ -6,11 +6,16 @@
 #if os(iOS)
 
 import SwiftUI
+import VoiceCommandCore
 
-struct VoiceCommandOverlay: View {
+package struct VoiceCommandOverlay: View {
     var controller: VoiceCommandController
 
-    var body: some View {
+    package init(controller: VoiceCommandController) {
+        self.controller = controller
+    }
+
+    package var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
             if controller.isListening {
                 HStack(spacing: 8) {
@@ -49,10 +54,6 @@ struct VoiceCommandOverlay: View {
         case .listeningForCommands: controller.transcript.isEmpty ? "Listening…" : controller.transcript
         }
     }
-}
-
-#Preview {
-    VoiceCommand.makeOverlay(VoiceCommand.makeController(dependencies: .scripted()))
 }
 
 #endif

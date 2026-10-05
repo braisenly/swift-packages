@@ -10,24 +10,24 @@ import Foundation
 
 /// One callback from the recognizer, already reduced to plain values.
 /// "No speech detected" never arrives here: the live adapter drops it as routine silence.
-nonisolated enum TranscriptEvent: Equatable, Sendable {
+public nonisolated enum TranscriptEvent: Equatable, Sendable {
     case text(String, isFinal: Bool)
     case failure(String)
 }
 
-nonisolated enum VoiceAuthorization: Equatable, Sendable {
+public nonisolated enum VoiceAuthorization: Equatable, Sendable {
     case authorized, denied, restricted, notDetermined, unknown
 }
 
 /// Streams transcripts from the microphone. One session at a time: `start`
 /// begins a fresh session, `stop` ends it and releases the audio session.
 @MainActor
-protocol SpeechTranscribing: AnyObject {
+public protocol SpeechTranscribing: AnyObject {
     var isAvailable: Bool { get }
     func start(contextualStrings: [String], onEvent: @escaping @MainActor @Sendable (TranscriptEvent) -> Void) throws
     func stop()
 }
 
-nonisolated protocol SpeechAuthorizing: Sendable {
+public nonisolated protocol SpeechAuthorizing: Sendable {
     func requestAuthorization() async -> VoiceAuthorization
 }

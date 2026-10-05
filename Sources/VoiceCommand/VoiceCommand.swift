@@ -7,9 +7,13 @@
 //
 
 import SwiftUI
+@_exported import VoiceCommandInterface
+@_exported import VoiceCommandCore
+@_exported import VoiceCommandLive
+import VoiceCommandUI
 
-enum VoiceCommand {
-    static func makeController(
+public enum VoiceCommand {
+    public static func makeController(
         configuration: VoiceCommandConfiguration = .init(),
         dependencies: VoiceCommandDependencies
     ) -> VoiceCommandController {
@@ -17,7 +21,7 @@ enum VoiceCommand {
     }
 
     #if os(iOS)
-    static func makeOverlay(_ controller: VoiceCommandController) -> some View {
+    public static func makeOverlay(_ controller: VoiceCommandController) -> some View {
         VoiceCommandOverlay(controller: controller)
     }
     #endif
