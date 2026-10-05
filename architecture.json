@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "0.1",
+  "layers": {
+    "Interface": { "mayDependOn": [], "forbiddenImports": ["SwiftUI", "UIKit", "AppKit"] },
+    "Core": { "mayDependOn": ["Interface", "foreign:Interface"], "forbiddenImports": ["SwiftUI", "UIKit", "AppKit"] },
+    "UI": { "mayDependOn": ["Core", "Interface", "capability:DesignSystem", "capability:Typography"] },
+    "Live": { "mayDependOn": ["Interface", "external:*"] },
+    "Testing": { "mayDependOn": ["Interface"] },
+    "Umbrella": { "mayDependOn": ["Core", "UI", "Live", "Interface"] }
+  },
+  "capabilities": {},
+  "exceptions": []
+}

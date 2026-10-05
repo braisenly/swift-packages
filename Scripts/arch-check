@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# ARCH_CHECK for braisenly/swift-packages.
+#   Scripts/arch-check          layer 1 (architecture.json vs manifest + imports)
+#   Scripts/arch-check --fast   same; layers 2-3 (swift-bylaws, Harmonize) are not wired yet
+set -euo pipefail
+cd "$(dirname "$0")/.."
+mkdir -p .build
+swift package dump-package > .build/arch-dump.json
+python3 Scripts/arch_check.py --dump .build/arch-dump.json --architecture architecture.json --root .

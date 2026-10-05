@@ -1,0 +1,26 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: swift --version && xcodebuild -version
+      - name: Architecture check
+        run: Scripts/arch-check
+      - name: Build
+        run: swift build
+      - name: Test
+        run: |
+          if [ -d Tests ]; then swift test; else echo "no test targets yet"; fi
+      - name: Examples
+        run: |
+          shopt -s nullglob
+          for project in Examples/*/*.xcodeproj; do
+            xcodebuild -project "$project" -scheme "$(basename "$project" .xcodeproj)" -destination 'generic/platform=iOS Simulator' build
+          done
