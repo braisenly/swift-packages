@@ -1,21 +1,24 @@
-// SpeechRecognizerOverlay.swift
+//
+//  VoiceCommandOverlay.swift
+//  VoiceCommand
+//
 
 #if os(iOS)
 
 import SwiftUI
 
-struct SpeechRecognizerOverlay: View {
-    var speech: SpeechRecognizer
+struct VoiceCommandOverlay: View {
+    var controller: VoiceCommandController
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
-            if speech.isListening {
+            if controller.isListening {
                 HStack(spacing: 8) {
                     Image(systemName: "waveform")
                         .symbolEffect(.variableColor.iterative, isActive: true)
                     Text(statusText)
-                    if speech.phase == .listeningForCommands {
-                        Text("\(speech.countdownRemaining)")
+                    if controller.phase == .listeningForCommands {
+                        Text("\(controller.countdownRemaining)")
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                     }
@@ -25,31 +28,31 @@ struct SpeechRecognizerOverlay: View {
                 .glassIfAvailable(cornerRadius: 10)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
-            if let error = speech.errorMessage {
+            if let error = controller.errorMessage {
                 HStack {
                     Text(error).font(.footnote).foregroundStyle(.red)
-                    Button("Dismiss") { speech.errorMessage = nil }.font(.footnote)
+                    Button("Dismiss") { controller.errorMessage = nil }.font(.footnote)
                 }
                 .padding(8)
                 .glassIfAvailable(cornerRadius: 10)
                 .transition(.opacity)
             }
         }
-        .animation(.easeInOut, value: speech.phase)
-        .animation(.easeInOut, value: speech.errorMessage)
+        .animation(.easeInOut, value: controller.phase)
+        .animation(.easeInOut, value: controller.errorMessage)
     }
 
     private var statusText: String {
-        switch speech.phase {
+        switch controller.phase {
         case .idle: ""
         case .waitingForTrigger: "Say “genie”"
-        case .listeningForCommands: speech.transcript.isEmpty ? "Listening…" : speech.transcript
+        case .listeningForCommands: controller.transcript.isEmpty ? "Listening…" : controller.transcript
         }
     }
 }
 
 #Preview {
-    SpeechRecognizerOverlay(speech: SpeechRecognizer())
+    VoiceCommand.makeOverlay(VoiceCommand.makeController(dependencies: .scripted()))
 }
 
 #endif
