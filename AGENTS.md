@@ -5,7 +5,7 @@ Shared Swift capability packages for Luke's drop-in architecture. Every capabili
 ## Package map
 | Capability | Products | Platforms | Status |
 |---|---|---|---|
-| _(none yet)_ | | | First capability: VoiceCommand (POC, extracted from `zautke/playground`) |
+| VoiceCommand | `VoiceCommand`, `VoiceCommandCore`, `VoiceCommandInterface`, `VoiceCommandTesting` | iOS (full); macOS: Interface + Core + Testing | POC, extracted from `zautke/playground` with history. Host must declare `NSMicrophoneUsageDescription` and `NSSpeechRecognitionUsageDescription`. Example: `Examples/VoiceCommandExample` |
 
 ## Capability anatomy
 Capability `X` → targets `XInterface` (protocols, Sendable values; Foundation only), `XCore` (logic; no SwiftUI/UIKit/AppKit), `XUI` (SwiftUI, `@MainActor @Observable` models), `XLive` (adapters over Apple/third-party SDKs), `XTesting` (fakes for every port), umbrella `X` (entry point; the only place `@_exported import` is allowed). Products: `X`, `XCore`, `XInterface`, `XTesting`. Example host: `Examples/XExample`, using only product `X`.
@@ -15,7 +15,7 @@ Resources load from `Bundle.module`. Cross-target internals use `package` access
 ## Rules
 - `ARCH_CHECK=Scripts/arch-check`. Run it after every manifest or import change; it must exit 0. Never weaken `architecture.json` to make it pass; `exceptions` entries need Luke's approval.
 - Every target is declared in `architecture.json`.
-- Code moved from an app keeps its concurrency semantics: mirror the app's isolation settings per target (`.defaultIsolation(MainActor.self)` for UI/Live where the app used MainActor default).
+- Code moved from an app keeps its concurrency semantics: mirror the app's isolation settings per target. VoiceCommand targets use `appIsolation` in Package.swift (Swift 6, `.defaultIsolation(MainActor.self)`, `NonisolatedNonsendingByDefault`, `InferIsolatedConformances`), matching playground's app target.
 - Extractions follow the kb protocol `projects/drop-in-architecture/protocols/factor-out-rewire-app-protocol-v1`: move and change never share a commit; gates are captured evidence.
 - Foundation UI capabilities (allowed as UI dependencies): none yet (DesignSystem and Typography are planned).
 

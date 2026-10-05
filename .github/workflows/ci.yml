@@ -18,9 +18,11 @@ jobs:
       - name: Test
         run: |
           if [ -d Tests ]; then swift test; else echo "no test targets yet"; fi
+      - name: iOS build and test
+        run: xcodebuild -scheme swift-packages-Package -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build test
       - name: Examples
         run: |
           shopt -s nullglob
           for project in Examples/*/*.xcodeproj; do
-            xcodebuild -project "$project" -scheme "$(basename "$project" .xcodeproj)" -destination 'generic/platform=iOS Simulator' build
+            xcodebuild -project "$project" -scheme "$(basename "$project" .xcodeproj)" -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
           done
