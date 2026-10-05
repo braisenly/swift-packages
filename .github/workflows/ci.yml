@@ -6,9 +6,15 @@ on:
 
 jobs:
   macos:
-    runs-on: macos-latest
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+      - name: Select Xcode 27
+        run: |
+          ls -d /Applications/Xcode*.app
+          xcode=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$xcode" ]; then echo "::error::Xcode 27 not installed on this runner image"; exit 1; fi
+          sudo xcode-select -s "$xcode"
       - name: Toolchain
         run: swift --version && xcodebuild -version
       - name: Architecture check
