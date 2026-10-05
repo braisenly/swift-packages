@@ -1,13 +1,77 @@
 {
   "schemaVersion": "0.1",
   "layers": {
-    "Interface": { "mayDependOn": [], "forbiddenImports": ["SwiftUI", "UIKit", "AppKit"] },
-    "Core": { "mayDependOn": ["Interface", "foreign:Interface"], "forbiddenImports": ["SwiftUI", "UIKit", "AppKit"] },
-    "UI": { "mayDependOn": ["Core", "Interface", "capability:DesignSystem", "capability:Typography"] },
-    "Live": { "mayDependOn": ["Interface", "external:*"] },
-    "Testing": { "mayDependOn": ["Interface"] },
-    "Umbrella": { "mayDependOn": ["Core", "UI", "Live", "Interface"] }
+    "Interface": {
+      "mayDependOn": [],
+      "forbiddenImports": [
+        "SwiftUI",
+        "UIKit",
+        "AppKit"
+      ]
+    },
+    "Core": {
+      "mayDependOn": [
+        "Interface",
+        "foreign:Interface"
+      ],
+      "forbiddenImports": [
+        "SwiftUI",
+        "UIKit",
+        "AppKit"
+      ]
+    },
+    "UI": {
+      "mayDependOn": [
+        "Core",
+        "Interface",
+        "capability:DesignSystem",
+        "capability:Typography"
+      ]
+    },
+    "Live": {
+      "mayDependOn": [
+        "Interface",
+        "external:*"
+      ]
+    },
+    "Testing": {
+      "mayDependOn": [
+        "Interface"
+      ]
+    },
+    "Umbrella": {
+      "mayDependOn": [
+        "Core",
+        "UI",
+        "Live",
+        "Interface"
+      ]
+    }
   },
-  "capabilities": {},
+  "capabilities": {
+    "VoiceCommand": {
+      "platforms": [
+        "iOS",
+        "macOS"
+      ],
+      "platformNotes": "VoiceCommandLive and VoiceCommandUI compile to nothing on macOS (#if os(iOS)); macOS surface is Interface + Core + Testing.",
+      "targets": {
+        "VoiceCommandInterface": "Interface",
+        "VoiceCommandCore": "Core",
+        "VoiceCommandUI": "UI",
+        "VoiceCommandLive": "Live",
+        "VoiceCommandTesting": "Testing",
+        "VoiceCommand": "Umbrella"
+      },
+      "products": [
+        "VoiceCommand",
+        "VoiceCommandCore",
+        "VoiceCommandInterface",
+        "VoiceCommandTesting"
+      ],
+      "uses": [],
+      "external": []
+    }
+  },
   "exceptions": []
 }

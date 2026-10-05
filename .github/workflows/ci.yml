@@ -18,9 +18,14 @@ jobs:
       - name: Test
         run: |
           if [ -d Tests ]; then swift test; else echo "no test targets yet"; fi
+      - name: iOS build and test
+        run: |
+          # Runner images ship different iPhone models; use the first available one.
+          udid=$(xcrun simctl list devices available -j | python3 -c "import json,sys; print(next(d['udid'] for r,ds in json.load(sys.stdin)['devices'].items() if 'iOS' in r for d in ds if d['name'].startswith('iPhone')))")
+          xcodebuild -scheme swift-packages-Package -destination "id=$udid" build test
       - name: Examples
         run: |
           shopt -s nullglob
           for project in Examples/*/*.xcodeproj; do
-            xcodebuild -project "$project" -scheme "$(basename "$project" .xcodeproj)" -destination 'generic/platform=iOS Simulator' build
+            xcodebuild -project "$project" -scheme "$(basename "$project" .xcodeproj)" -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
           done
